@@ -18,6 +18,53 @@ LEARN_NB = 1
 
 device = torch.device("cuda:0" if torch.cuda.is_available() else "cpu")
 
+class ObjectReplayBuffer:
+    def __init__(self, data_buffer_size, data_batch_size, data_seed):
+        self.data_memory = deque(maxlen=data_buffer_size)
+        self.data_batch_size = data_batch_size
+        self.data_experience = namedtuple("Experience", field_names=["state", "action", "action_other_player", "reward", "next_state", "next_state_other_player", "done"])
+        self.data_seed = random.seed(data_seed)
+
+    def sample(self):
+        data_experiences = random.sample(self.data_memory, k=self.data_batch_size)
+        data_states = torch.from_numpy(np.vstack([e.state for e in data_experiences if e is not None])).float().to(device)
+        data_actions = torch.from_numpy(np.vstack([e.action for e in data_experiences if e is not None])).float().to(device)
+        data_actions_other_player = torch.from_numpy(np.vstack([e.action_other_player for e in data_experiences if e is not None])).float().to(device)
+        data_rewards = torch.from_numpy(np.vstack([e.reward for e in data_experiences if e is not None])).float().to(device)
+        data_next_states = torch.from_numpy(np.vstack([e.next_state for e in data_experiences if e is not None])).float().to(
+            device)
+        data_next_states_other_player = torch.from_numpy(np.vstack([e.next_state_other_player for e in data_experiences if e is not None])).float().to(
+            device)
+        data_dones = torch.from_numpy(np.vstack([e.done for e in data_experiences if e is not None]).astype(np.uint8)).float().to(
+            device)
+        return data_states, data_actions, data_actions_other_player, data_rewards, data_next_states, data_next_states_other_player, data_dones
+
+    def add(self, data_state, data_action, data_action_other_player, data_reward, data_next_state, data_next_state_other_player, data_done):
+        data_e = self.data_experience(data_state, data_action, data_action_other_player, data_reward, data_next_state, data_next_state_other_player, data_done)
+        self.data_memory.append(data_e)
+
+    def __len__(self):
+        return len(self.data_memory)
+    
+class ObjectOUNoise:
+    def __init__(self, data_size, data_seed, data_mu=0., data_theta=0.15, data_sigma=0.2):
+        self.data_mu = data_mu * np.ones(data_size)
+        self.data_theta = data_theta
+        self.data_sigma = data_sigma
+        self.data_seed = random.seed(data_seed)
+        self.data_state = None
+        self.reset()
+
+    def sample(self):
+        data_x = self.data_state
+        data_dx = self.data_theta * (self.data_mu - data_x) + self.data_sigma * np.array([random.random() for i in range(len(data_x))])
+        self.data_state = data_x + data_dx
+        return self.data_state
+
+    def reset(self):
+        self.data_state = copy.copy(self.data_mu)
+
+
 class ObjectAgent(object):
     def __init__(self, data_state_size, data_action_size, data_random_seed):
         self.data_state_size = data_state_size
@@ -87,49 +134,3 @@ class ObjectAgent(object):
                 self.learn(data_experiences, GAMMA)
 
 
-class ObjectOUNoise:
-    def __init__(self, data_size, data_seed, data_mu=0., data_theta=0.15, data_sigma=0.2):
-        self.data_mu = data_mu * np.ones(data_size)
-        self.data_theta = data_theta
-        self.data_sigma = data_sigma
-        self.data_seed = random.seed(data_seed)
-        self.data_state = None
-        self.reset()
-
-    def sample(self):
-        data_x = self.data_state
-        data_dx = self.data_theta * (self.data_mu - data_x) + self.data_sigma * np.array([random.random() for i in range(len(data_x))])
-        self.data_state = data_x + data_dx
-        return self.data_state
-
-    def reset(self):
-        self.data_state = copy.copy(self.data_mu)
-
-
-class ObjectReplayBuffer:
-    def __init__(self, data_buffer_size, data_batch_size, data_seed):
-        self.data_memory = deque(maxlen=data_buffer_size)
-        self.data_batch_size = data_batch_size
-        self.data_experience = namedtuple("Experience", field_names=["state", "action", "action_other_player", "reward", "next_state", "next_state_other_player", "done"])
-        self.data_seed = random.seed(data_seed)
-
-    def sample(self):
-        data_experiences = random.sample(self.data_memory, k=self.data_batch_size)
-        data_states = torch.from_numpy(np.vstack([e.state for e in data_experiences if e is not None])).float().to(device)
-        data_actions = torch.from_numpy(np.vstack([e.action for e in data_experiences if e is not None])).float().to(device)
-        data_actions_other_player = torch.from_numpy(np.vstack([e.action_other_player for e in data_experiences if e is not None])).float().to(device)
-        data_rewards = torch.from_numpy(np.vstack([e.reward for e in data_experiences if e is not None])).float().to(device)
-        data_next_states = torch.from_numpy(np.vstack([e.next_state for e in data_experiences if e is not None])).float().to(
-            device)
-        data_next_states_other_player = torch.from_numpy(np.vstack([e.next_state_other_player for e in data_experiences if e is not None])).float().to(
-            device)
-        data_dones = torch.from_numpy(np.vstack([e.done for e in data_experiences if e is not None]).astype(np.uint8)).float().to(
-            device)
-        return data_states, data_actions, data_actions_other_player, data_rewards, data_next_states, data_next_states_other_player, data_dones
-
-    def add(self, data_state, data_action, data_action_other_player, data_reward, data_next_state, data_next_state_other_player, data_done):
-        data_e = self.data_experience(data_state, data_action, data_action_other_player, data_reward, data_next_state, data_next_state_other_player, data_done)
-        self.data_memory.append(data_e)
-
-    def __len__(self):
-        return len(self.data_memory)
